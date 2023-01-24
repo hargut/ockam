@@ -1,6 +1,7 @@
 use crate::CommandGlobalOpts;
 use anyhow::anyhow;
 use clap::Args;
+use ockam_api::cli_state::ConfigItemsStore;
 
 #[derive(Clone, Debug, Args)]
 pub struct DeleteCommand {

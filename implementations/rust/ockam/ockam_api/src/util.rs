@@ -1,4 +1,4 @@
-use crate::cli_state::CliState;
+use crate::cli_state::{CliState, ConfigItemsStore};
 use crate::config::lookup::{InternetAddress, LookupMeta};
 use crate::error::ApiError;
 use anyhow::anyhow;

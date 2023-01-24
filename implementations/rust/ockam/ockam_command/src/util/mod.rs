@@ -14,7 +14,7 @@ use tracing_subscriber::{filter::LevelFilter, fmt, EnvFilter};
 
 pub use config::*;
 use ockam::{Address, Context, NodeBuilder, Route, TcpTransport, TCP};
-use ockam_api::cli_state::{CliState, NodeState};
+use ockam_api::cli_state::{CliState, ConfigItemsStore, NodeState};
 use ockam_api::nodes::NODEMANAGER_ADDR;
 use ockam_core::api::{RequestBuilder, Response, Status};
 use ockam_core::DenyAll;
@@ -572,7 +572,7 @@ mod tests {
         let v_config = VaultConfig::from_name(&v_name)?;
         let v_storage = FileStorage::create(VaultConfig::path(&v_name)?).await?;
         let v = Vault::new(Some(Arc::new(v_storage)));
-        cli_state.vaults.create(&v_name, v_config).await?;
+        cli_state.vaults.create(&v_name, v_config)?;
 
         let idt = Identity::create(ctx, &v).await?;
         let idt_config = IdentityConfig::new(&idt).await;

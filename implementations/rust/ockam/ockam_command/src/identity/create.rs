@@ -3,7 +3,7 @@ use crate::util::node_rpc;
 use crate::CommandGlobalOpts;
 use clap::Args;
 use ockam::Context;
-use ockam_api::cli_state::{self, VaultConfig};
+use ockam_api::cli_state::{self, ConfigItemsStore, VaultConfig};
 use ockam_identity::Identity;
 use rand::prelude::random;
 
@@ -35,8 +35,7 @@ async fn run_impl(
         let config = options
             .state
             .vaults
-            .create(&vault_name, VaultConfig::from_name(&vault_name)?)
-            .await?
+            .create(&vault_name, VaultConfig::from_name(&vault_name)?)?
             .config;
         println!("Default vault created: {}", &vault_name);
         config

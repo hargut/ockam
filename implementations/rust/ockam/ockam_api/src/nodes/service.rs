@@ -26,7 +26,7 @@ use std::time::Duration;
 use super::models::secure_channel::CredentialExchangeMode;
 use super::registry::Registry;
 use crate::authenticator::direct::types::OneTimeCode;
-use crate::cli_state::CliState;
+use crate::cli_state::{CliState, ConfigItemsStore};
 use crate::config::cli::AuthoritiesConfig;
 use crate::config::lookup::ProjectLookup;
 use crate::error::ApiError;

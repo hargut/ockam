@@ -6,7 +6,7 @@ use crate::CommandGlobalOpts;
 use anyhow::Context;
 use clap::Args;
 use ockam::{route, Route, TCP};
-use ockam_api::{nodes::models, route_to_multiaddr};
+use ockam_api::{cli_state::ConfigItemsStore, nodes::models, route_to_multiaddr};
 use ockam_core::api::Request;
 #[derive(Args, Clone, Debug)]
 pub struct CreateCommand {

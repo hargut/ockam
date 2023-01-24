@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::{map_multiaddr_err, NodeManagerWorker};
-use crate::cli_state::CliState;
+use crate::cli_state::{CliState, ConfigItemsStore};
 use crate::error::ApiError;
 use crate::nodes::models::secure_channel::{
     CreateSecureChannelListenerRequest, CreateSecureChannelRequest, CreateSecureChannelResponse,

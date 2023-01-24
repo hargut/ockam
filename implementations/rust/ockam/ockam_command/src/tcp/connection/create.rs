@@ -7,7 +7,7 @@ use anyhow::Context;
 use clap::Args;
 use colorful::Colorful;
 use ockam::{route, Route, TCP};
-use ockam_api::{nodes::models, route_to_multiaddr};
+use ockam_api::{cli_state::ConfigItemsStore, nodes::models, route_to_multiaddr};
 use serde_json::json;
 use std::net::SocketAddrV4;
 

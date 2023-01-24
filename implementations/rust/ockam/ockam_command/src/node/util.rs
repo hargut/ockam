@@ -8,7 +8,7 @@ use std::process::Command;
 use ockam::identity::{Identity, PublicIdentity};
 use ockam::{Context, TcpTransport};
 use ockam_api::authenticator::direct::types::OneTimeCode;
-use ockam_api::cli_state;
+use ockam_api::cli_state::{self, ConfigItemsStore};
 use ockam_api::config::cli;
 use ockam_api::nodes::models::transport::{TransportMode, TransportType};
 use ockam_api::nodes::service::{
@@ -105,7 +105,7 @@ pub(super) async fn init_node_state(
     } else {
         let n = hex::encode(random::<[u8; 4]>());
         let c = cli_state::VaultConfig::from_name(&n)?;
-        opts.state.vaults.create(&n, c).await?
+        opts.state.vaults.create(&n, c)?
     };
 
     // Get identity specified in the argument

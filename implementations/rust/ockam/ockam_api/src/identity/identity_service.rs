@@ -1,4 +1,4 @@
-use crate::cli_state;
+use crate::cli_state::{self, ConfigItemsStore};
 use crate::identity::models::*;
 use core::convert::Infallible;
 use minicbor::encode::Write;

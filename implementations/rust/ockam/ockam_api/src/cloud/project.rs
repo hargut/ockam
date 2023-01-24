@@ -3,6 +3,7 @@ use std::str::FromStr;
 use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+use crate::cli_state::ConfigItemsStore;
 use ockam_core::AsyncTryClone;
 use ockam_core::CowStr;
 use ockam_core::Result;

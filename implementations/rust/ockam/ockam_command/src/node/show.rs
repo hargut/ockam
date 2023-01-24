@@ -9,7 +9,11 @@ use ockam_api::nodes::models::identity::ShortIdentityResponse;
 use ockam_api::nodes::models::portal::{InletList, OutletList};
 use ockam_api::nodes::models::services::ServiceList;
 use ockam_api::nodes::models::transport::TransportList;
-use ockam_api::{addr_to_multiaddr, cli_state, route_to_multiaddr};
+use ockam_api::{
+    addr_to_multiaddr,
+    cli_state::{self, ConfigItemsStore},
+    route_to_multiaddr,
+};
 use ockam_core::Route;
 use ockam_multiaddr::proto::{DnsAddr, Node, Tcp};
 use ockam_multiaddr::MultiAddr;

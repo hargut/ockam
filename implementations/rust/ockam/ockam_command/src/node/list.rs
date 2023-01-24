@@ -3,7 +3,7 @@ use crate::{help, node::show::print_query_status, node::HELP_DETAIL, CommandGlob
 use anyhow::{anyhow, Context as _};
 use clap::Args;
 use ockam::{Context, TcpTransport};
-use ockam_api::nodes::models::base::NodeStatus;
+use ockam_api::{cli_state::ConfigItemsStore, nodes::models::base::NodeStatus};
 use std::time::Duration;
 
 /// List nodes

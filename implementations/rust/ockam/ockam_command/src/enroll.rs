@@ -11,10 +11,12 @@ use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use tracing::{debug, info};
 
 use ockam::Context;
-use ockam_api::cli_state::EnrollmentStatus;
-use ockam_api::cloud::enroll::auth0::*;
-use ockam_api::cloud::project::{OktaAuth0, Project};
-use ockam_api::cloud::space::Space;
+use ockam_api::{
+    cli_state::{ConfigItem, ConfigItemsStore, EnrollmentStatus},
+    cloud::enroll::auth0::*,
+    cloud::project::{OktaAuth0, Project},
+    cloud::space::Space,
+};
 use ockam_core::api::Status;
 
 use crate::node::util::{delete_embedded_node, start_embedded_node};

@@ -3,7 +3,10 @@ use crate::util::output::Output;
 use crate::CommandGlobalOpts;
 use anyhow::anyhow;
 use clap::Args;
-use ockam_api::nodes::models::identity::{LongIdentityResponse, ShortIdentityResponse};
+use ockam_api::{
+    cli_state::{ConfigItem, ConfigItemsStore},
+    nodes::models::identity::{LongIdentityResponse, ShortIdentityResponse},
+};
 
 /// List nodes
 #[derive(Clone, Debug, Args)]
@@ -30,14 +33,14 @@ fn run_impl(opts: CommandGlobalOpts, cmd: ListCommand) -> crate::Result<()> {
         ));
     }
     for (idx, identity) in idts.iter().enumerate() {
-        let state = opts.state.identities.get(&identity.name)?;
-        let default = if opts.state.identities.default()?.name == identity.name {
+        let state = opts.state.identities.get(&identity.name()?)?;
+        let default = if opts.state.identities.default()?.name()? == identity.name()? {
             " (default)"
         } else {
             ""
         };
         println!("Identity[{idx}]:");
-        println!("{:2}Name: {}{}", "", &identity.name, default);
+        println!("{:2}Name: {}{}", "", &identity.name()?, default);
         if cmd.full {
             let identity = state.config.change_history.export()?;
             let output = LongIdentityResponse::new(identity);

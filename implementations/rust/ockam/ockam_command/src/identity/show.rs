@@ -5,7 +5,10 @@ use anyhow::anyhow;
 use clap::Args;
 use core::fmt::Write;
 use ockam_api::cli_state::CliState;
-use ockam_api::nodes::models::identity::{LongIdentityResponse, ShortIdentityResponse};
+use ockam_api::{
+    cli_state::{ConfigItem, ConfigItemsStore},
+    nodes::models::identity::{LongIdentityResponse, ShortIdentityResponse},
+};
 use ockam_identity::change_history::IdentityChangeHistory;
 
 #[derive(Clone, Debug, Args)]
@@ -65,7 +68,7 @@ fn default_identity_name() -> String {
     state
         .identities
         .default()
-        .map(|i| i.name)
+        .map(|i| i.name().unwrap())
         // Return empty string so we can return a proper error message from the command
         .unwrap_or_else(|_| "".to_string())
 }

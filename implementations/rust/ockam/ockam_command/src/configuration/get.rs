@@ -1,5 +1,6 @@
 use crate::CommandGlobalOpts;
 use clap::Args;
+use ockam_api::cli_state::ConfigItemsStore;
 
 #[derive(Clone, Debug, Args)]
 pub struct GetCommand {

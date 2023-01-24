@@ -103,6 +103,136 @@ impl CliState {
     }
 }
 
+pub trait ConfigItem<'a, T: Serialize> {
+    const DEFAULT_ITEM_DIR: &'a str;
+
+    fn default_path(&self) -> Result<PathBuf> {
+        Ok(CliState::defaults_dir()?.join(Self::DEFAULT_ITEM_DIR))
+    }
+
+    fn get_config(&self) -> &T;
+
+    fn get_path(&self) -> &PathBuf;
+
+    fn name(&self) -> Result<String> {
+        self.get_path()
+            .file_stem()
+            .and_then(|s| s.to_os_string().into_string().ok())
+            .ok_or_else(|| {
+                CliStateError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format! {"failed to parse the {} name", Self::DEFAULT_ITEM_DIR},
+                ))
+            })
+    }
+
+    fn save(&self) -> Result<()> {
+        let contents = serde_json::to_string(&self.get_config())?;
+        std::fs::write(self.get_path(), contents)?;
+        Ok(())
+    }
+}
+
+pub trait ConfigItemFromJson: for<'a> Deserialize<'a> {
+    fn from_json(path: &Path) -> std::result::Result<Self, CliStateError>
+    where
+        Self: Sized,
+    {
+        let content = std::fs::read_to_string(path)?;
+        let config: Self = serde_json::from_str(&content)?;
+        Ok(config)
+    }
+}
+
+pub trait ConfigItemsStore<'a, State, Config>
+where
+    Config: ConfigItemFromJson + for<'b> Deserialize<'b> + Serialize,
+{
+    const DEFAULT_ITEM_NAME: &'a str;
+    const ITEM_STORED_AS_JSON: &'a bool = &true;
+
+    fn create(&self, name: &str, config: Config) -> Result<State> {
+        let path = {
+            let mut path = self.get_dir();
+            path.push(format!("{}.json", name));
+            if path.exists() {
+                return Err(CliStateError::AlreadyExists(format!(
+                    "{} `{name}`",
+                    Self::DEFAULT_ITEM_NAME
+                )));
+            }
+            path
+        };
+        let contents = serde_json::to_string(&config)?;
+        std::fs::write(&path, contents)?;
+        if !self.default_path()?.exists() {
+            self.set_default(name)?;
+        }
+        self.get(name)?;
+        self.new_item(path, config)
+    }
+
+    fn default_path(&self) -> Result<PathBuf> {
+        Ok(CliState::defaults_dir()?.join(Self::DEFAULT_ITEM_NAME))
+    }
+
+    fn default(&self) -> Result<State> {
+        let path = std::fs::canonicalize(self.default_path()?)?;
+        let name = file_stem(&path)?;
+        self.get(&name)
+    }
+
+    fn get(&self, name: &str) -> Result<State> {
+        let path = self.check_path(name)?;
+        let config = Config::from_json(path.as_path())?;
+        self.new_item(path, config)
+    }
+
+    fn check_path(&self, name: &str) -> Result<PathBuf> {
+        let mut path = self.get_dir();
+        if *Self::ITEM_STORED_AS_JSON {
+            path.push(format! {"{}.json", name});
+        } else {
+            path.push(name)
+        }
+        if !path.exists() {
+            return Err(CliStateError::NotFound(format!(
+                "{} `{name}`",
+                Self::DEFAULT_ITEM_NAME
+            )));
+        }
+        Ok(path)
+    }
+
+    fn get_dir(&self) -> PathBuf;
+
+    fn list(&self) -> Result<Vec<State>> {
+        let mut config_items: Vec<State> = vec![];
+        for entry in std::fs::read_dir(self.get_dir())? {
+            let entry = entry?;
+            if entry.metadata()?.is_file() {
+                match self.get(&file_stem(&entry.path())?) {
+                    Ok(item) => config_items.push(item),
+                    Err(err) => {
+                        println! {"Warning: Failed to load config item \'{}\' at path \'{}\' error \'{:?}\'",
+                        Self::DEFAULT_ITEM_NAME, &entry.path().to_str().unwrap(), err}
+                    }
+                }
+            }
+        }
+        Ok(config_items)
+    }
+
+    fn new_item(&self, path: PathBuf, cfg: Config) -> Result<State>;
+
+    fn set_default(&self, name: &str) -> Result<State> {
+        let original = self.check_path(name)?;
+        let link = self.default_path()?;
+        std::os::unix::fs::symlink(original, link)?;
+        self.get(name)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VaultsState {
     dir: PathBuf,
@@ -114,62 +244,17 @@ impl VaultsState {
         std::fs::create_dir_all(dir.join("data"))?;
         Ok(Self { dir })
     }
+}
 
-    pub async fn create(&self, name: &str, config: VaultConfig) -> Result<VaultState> {
-        let path = {
-            let mut path = self.dir.clone();
-            path.push(format!("{}.json", name));
-            if path.exists() {
-                return Err(CliStateError::AlreadyExists(format!("vault `{name}`")));
-            }
-            path
-        };
-        let contents = serde_json::to_string(&config)?;
-        std::fs::write(&path, contents)?;
-        if !self.default_path()?.exists() {
-            self.set_default(name)?;
-        }
-        config.get().await?;
+impl<'a> ConfigItemsStore<'a, VaultState, VaultConfig> for VaultsState {
+    const DEFAULT_ITEM_NAME: &'a str = "vault";
+
+    fn get_dir(&self) -> PathBuf {
+        self.dir.clone()
+    }
+
+    fn new_item(&self, path: PathBuf, config: VaultConfig) -> Result<VaultState> {
         Ok(VaultState { path, config })
-    }
-
-    pub fn get(&self, name: &str) -> Result<VaultState> {
-        let path = {
-            let mut path = self.dir.clone();
-            path.push(format!("{}.json", name));
-            if !path.exists() {
-                return Err(CliStateError::NotFound(format!("vault `{name}`")));
-            }
-            path
-        };
-        let contents = std::fs::read_to_string(&path)?;
-        let config = serde_json::from_str(&contents)?;
-        Ok(VaultState { path, config })
-    }
-
-    pub fn default_path(&self) -> Result<PathBuf> {
-        Ok(CliState::defaults_dir()?.join("vault"))
-    }
-
-    pub fn default(&self) -> Result<VaultState> {
-        let path = std::fs::canonicalize(self.default_path()?)?;
-        let contents = std::fs::read_to_string(&path)?;
-        let config = serde_json::from_str(&contents)?;
-        Ok(VaultState { path, config })
-    }
-
-    pub fn set_default(&self, name: &str) -> Result<VaultState> {
-        let original = {
-            let mut path = self.dir.clone();
-            path.push(format!("{}.json", name));
-            if !path.exists() {
-                return Err(CliStateError::NotFound(format!("vault `{name}`")));
-            }
-            path
-        };
-        let link = self.default_path()?;
-        std::os::unix::fs::symlink(original, link)?;
-        self.get(name)
     }
 }
 
@@ -179,17 +264,32 @@ pub struct VaultState {
     pub config: VaultConfig,
 }
 
-impl VaultState {
-    pub fn name(&self) -> Result<String> {
-        self.path
-            .file_stem()
-            .and_then(|s| s.to_os_string().into_string().ok())
-            .ok_or_else(|| {
-                CliStateError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "failed to parse the vault name",
-                ))
-            })
+impl<'a> ConfigItem<'a, VaultConfig> for VaultState {
+    const DEFAULT_ITEM_DIR: &'a str = "vaults";
+    fn get_config(&self) -> &VaultConfig {
+        &self.config
+    }
+    fn get_path(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+impl Display for VaultState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "Name: {}",
+            self.path.as_path().file_stem().unwrap().to_str().unwrap()
+        )?;
+        writeln!(
+            f,
+            "Type: {}",
+            match self.config.is_aws() {
+                true => "AWS KMS",
+                false => "OCKAM",
+            }
+        )?;
+        Ok(())
     }
 }
 
@@ -237,6 +337,8 @@ impl VaultConfig {
     }
 }
 
+impl ConfigItemFromJson for VaultConfig {}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IdentitiesState {
     dir: PathBuf,
@@ -247,55 +349,6 @@ impl IdentitiesState {
         let dir = cli_path.join("identities");
         std::fs::create_dir_all(&dir)?;
         Ok(Self { dir })
-    }
-
-    pub fn create(&self, name: &str, config: IdentityConfig) -> Result<IdentityState> {
-        let path = {
-            let mut path = self.dir.clone();
-            path.push(format!("{}.json", name));
-            if path.exists() {
-                return Err(CliStateError::AlreadyExists(format!("identity `{name}`")));
-            }
-            path
-        };
-        let contents = serde_json::to_string(&config)?;
-        std::fs::write(&path, contents)?;
-        if !self.default_path()?.exists() {
-            self.set_default(name)?;
-        }
-        Ok(IdentityState {
-            name: name.to_string(),
-            path,
-            config,
-        })
-    }
-
-    pub fn get(&self, name: &str) -> Result<IdentityState> {
-        let path = {
-            let mut path = self.dir.clone();
-            path.push(format!("{}.json", name));
-            if !path.exists() {
-                return Err(CliStateError::NotFound(format!("identity `{name}`")));
-            }
-            path
-        };
-        let contents = std::fs::read_to_string(&path)?;
-        let config = serde_json::from_str(&contents)?;
-        Ok(IdentityState {
-            name: name.to_string(),
-            path,
-            config,
-        })
-    }
-
-    pub fn list(&self) -> Result<Vec<IdentityState>> {
-        let mut identities: Vec<IdentityState> = vec![];
-        for entry in std::fs::read_dir(&self.dir)? {
-            if let Ok(identity) = self.get(&file_stem(&entry?.path())?) {
-                identities.push(identity);
-            }
-        }
-        Ok(identities)
     }
 
     pub fn delete(&self, name: &str) -> Result<()> {
@@ -313,57 +366,43 @@ impl IdentitiesState {
                 let mut idts = self.list()?;
                 idts.retain(|i| i.path != identity.path);
                 if let Some(idt) = idts.first() {
-                    println!("Setting default identity to `{}`", idt.name);
-                    self.set_default(&idt.name)?;
+                    println!("Setting default identity to `{}`", idt.name()?);
+                    self.set_default(&idt.name()?)?;
                 }
             }
         }
 
         // Remove identity file
         std::fs::remove_file(identity.path)?;
-
         Ok(())
     }
+}
 
-    pub fn default_path(&self) -> Result<PathBuf> {
-        Ok(CliState::defaults_dir()?.join("identity"))
+impl<'a> ConfigItemsStore<'a, IdentityState, IdentityConfig> for IdentitiesState {
+    const DEFAULT_ITEM_NAME: &'a str = "identity";
+
+    fn get_dir(&self) -> PathBuf {
+        self.dir.clone()
     }
 
-    pub fn default(&self) -> Result<IdentityState> {
-        let path = std::fs::canonicalize(self.default_path()?)?;
-        let name = file_stem(&path)?;
-        let contents = std::fs::read_to_string(&path)?;
-        let config = serde_json::from_str(&contents)?;
-        Ok(IdentityState { name, path, config })
-    }
-
-    pub fn set_default(&self, name: &str) -> Result<IdentityState> {
-        let original = {
-            let mut path = self.dir.clone();
-            path.push(format!("{}.json", name));
-            if !path.exists() {
-                return Err(CliStateError::NotFound(format!("identity `{name}`")));
-            }
-            path
-        };
-        let link = self.default_path()?;
-        std::os::unix::fs::symlink(original, link)?;
-        self.get(name)
+    fn new_item(&self, path: PathBuf, config: IdentityConfig) -> Result<IdentityState> {
+        Ok(IdentityState { path, config })
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IdentityState {
-    pub name: String,
     pub path: PathBuf,
     pub config: IdentityConfig,
 }
 
-impl IdentityState {
-    pub fn save(&self) -> Result<()> {
-        let contents = serde_json::to_string(&self.config)?;
-        std::fs::write(&self.path, contents)?;
-        Ok(())
+impl<'a> ConfigItem<'a, IdentityConfig> for IdentityState {
+    const DEFAULT_ITEM_DIR: &'a str = "identities";
+    fn get_config(&self) -> &IdentityConfig {
+        &self.config
+    }
+    fn get_path(&self) -> &PathBuf {
+        &self.path
     }
 }
 
@@ -407,11 +446,14 @@ impl IdentityConfig {
         }
     }
 
+    // FIXME: import dropped in default implementation?
     pub async fn get(&self, ctx: &ockam::Context, vault: &Vault) -> Result<Identity<Vault>> {
         let data = self.change_history.export()?;
         Ok(Identity::import(ctx, &data, vault).await?)
     }
 }
+
+impl ConfigItemFromJson for IdentityConfig {}
 
 impl PartialEq for IdentityConfig {
     fn eq(&self, other: &Self) -> bool {
@@ -464,35 +506,41 @@ pub struct NodesState {
     pub dir: PathBuf,
 }
 
+impl<'a> ConfigItemsStore<'a, NodeState, NodeConfig> for NodesState {
+    const DEFAULT_ITEM_NAME: &'a str = "node";
+    const ITEM_STORED_AS_JSON: &'a bool = &false;
+
+    fn get_dir(&self) -> PathBuf {
+        self.dir.clone()
+    }
+
+    fn list(&self) -> Result<Vec<NodeState>> {
+        let mut nodes = vec![];
+        for entry in std::fs::read_dir(&self.dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                let name = entry.file_name().into_string().map_err(|_| {
+                    CliStateError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "node's directory has an invalid name",
+                    ))
+                })?;
+                nodes.push(self.get(&name)?);
+            }
+        }
+        Ok(nodes)
+    }
+
+    fn new_item(&self, path: PathBuf, config: NodeConfig) -> Result<NodeState> {
+        Ok(NodeState { path, config })
+    }
+}
+
 impl NodesState {
     fn new(cli_path: &Path) -> Result<Self> {
         let dir = cli_path.join("nodes");
         std::fs::create_dir_all(&dir)?;
         Ok(Self { dir })
-    }
-
-    pub fn default_path(&self) -> Result<PathBuf> {
-        Ok(CliState::defaults_dir()?.join("node"))
-    }
-
-    pub fn default(&self) -> Result<NodeState> {
-        let path = std::fs::canonicalize(self.default_path()?)?;
-        let name = file_stem(&path)?;
-        self.get(&name)
-    }
-
-    pub fn set_default(&self, name: &str) -> Result<NodeState> {
-        let original = {
-            let mut path = self.dir.clone();
-            path.push(name);
-            if !path.exists() {
-                return Err(CliStateError::NotFound(format!("node `{name}`")));
-            }
-            path
-        };
-        let link = self.default_path()?;
-        std::os::unix::fs::symlink(original, link)?;
-        self.get(name)
     }
 
     pub fn create(&self, name: &str, mut config: NodeConfig) -> Result<NodeState> {
@@ -521,36 +569,6 @@ impl NodesState {
             self.set_default(name)?;
         }
         Ok(state)
-    }
-
-    pub fn list(&self) -> Result<Vec<NodeState>> {
-        let mut nodes = vec![];
-        for entry in std::fs::read_dir(&self.dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                let name = entry.file_name().into_string().map_err(|_| {
-                    CliStateError::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "node's directory has an invalid name",
-                    ))
-                })?;
-                nodes.push(self.get(&name)?);
-            }
-        }
-        Ok(nodes)
-    }
-
-    pub fn get(&self, name: &str) -> Result<NodeState> {
-        let path = {
-            let mut path = self.dir.clone();
-            path.push(name);
-            if !path.exists() {
-                return Err(CliStateError::NotFound(format!("node `{name}`")));
-            }
-            path
-        };
-        let config = NodeConfig::try_from(&path)?;
-        Ok(NodeState::new(path, config))
     }
 
     pub fn delete(&self, name: &str, sigkill: bool) -> Result<()> {
@@ -596,7 +614,7 @@ impl NodesState {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct NodeState {
     pub path: PathBuf,
     pub config: NodeConfig,
@@ -612,7 +630,7 @@ impl NodeState {
     }
 
     pub fn setup(&self) -> Result<NodeSetupConfig> {
-        NodeSetupConfig::try_from(&self.path.join("setup.json"))
+        NodeSetupConfig::from_json(self.path.join("setup.json").as_path())
     }
 
     pub fn set_setup(&self, setup: &NodeSetupConfig) -> Result<()> {
@@ -682,7 +700,7 @@ impl NodeState {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct NodeConfig {
     pub name: String,
     version: NodeConfigVersion,
@@ -724,10 +742,11 @@ impl NodeConfig {
     }
 }
 
-impl TryFrom<&PathBuf> for NodeConfig {
-    type Error = CliStateError;
-
-    fn try_from(path: &PathBuf) -> std::result::Result<Self, Self::Error> {
+impl ConfigItemFromJson for NodeConfig {
+    fn from_json(path: &Path) -> std::result::Result<Self, CliStateError>
+    where
+        Self: Sized,
+    {
         let name = {
             let err = || {
                 CliStateError::Io(std::io::Error::new(
@@ -746,7 +765,7 @@ impl TryFrom<&PathBuf> for NodeConfig {
             version: NodeConfigVersion::load(path)?,
             default_vault: std::fs::canonicalize(path.join("default_vault"))?,
             default_identity: std::fs::canonicalize(path.join("default_identity"))?,
-            setup: NodeSetupConfig::try_from(&path.join("setup.json"))?,
+            setup: NodeSetupConfig::from_json(path.join("setup.json").as_path())?,
         })
     }
 }
@@ -785,7 +804,7 @@ impl NodeConfigBuilder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 enum NodeConfigVersion {
     V1,
 }
@@ -851,20 +870,13 @@ impl NodeSetupConfig {
     }
 }
 
-impl TryFrom<&PathBuf> for NodeSetupConfig {
-    type Error = CliStateError;
-
-    fn try_from(path: &PathBuf) -> std::result::Result<Self, Self::Error> {
-        let contents = std::fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&contents)?)
-    }
-}
+impl ConfigItemFromJson for NodeSetupConfig {}
 
 pub fn random_name() -> String {
     hex::encode(random::<[u8; 4]>())
 }
 
-fn file_stem(path: &Path) -> Result<String> {
+pub fn file_stem(path: &Path) -> Result<String> {
     path.file_stem()
         .ok_or_else(|| CliStateError::NotFound(format!("name for {path:?}")))?
         .to_str()
@@ -891,7 +903,7 @@ mod tests {
 
             let config = VaultConfig::from_name(&name)?;
 
-            let state = sut.vaults.create(&name, config).await.unwrap();
+            let state = sut.vaults.create(&name, config).unwrap();
             let got = sut.vaults.get(&name).unwrap();
             assert_eq!(got, state);
 

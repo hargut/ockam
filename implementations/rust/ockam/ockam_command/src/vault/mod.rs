@@ -3,7 +3,7 @@ use crate::{help, CommandGlobalOpts, Result};
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
 use ockam::Context;
-use ockam_api::cli_state;
+use ockam_api::cli_state::{self, ConfigItem, ConfigItemsStore};
 use ockam_core::vault::{Secret, SecretAttributes, SecretPersistence, SecretType, SecretVault};
 use ockam_identity::{Identity, IdentityStateConst, KeyAttributes};
 use rand::prelude::random;
@@ -41,6 +41,7 @@ pub enum VaultSubcommand {
         /// Name of the vault
         name: Option<String>,
     },
+    List {},
 }
 
 impl VaultCommand {
@@ -60,7 +61,7 @@ async fn run_impl(ctx: Context, (opts, cmd): (CommandGlobalOpts, VaultCommand)) 
                 cli_state::VaultConfig::path(&name).expect("Failed to build Vault's path")
             });
             let config = cli_state::VaultConfig::new(path, aws_kms)?;
-            opts.state.vaults.create(&name, config.clone()).await?;
+            opts.state.vaults.create(&name, config)?;
             println!("Vault created: {}", &name);
         }
         VaultSubcommand::AttachKey {
@@ -87,16 +88,19 @@ async fn run_impl(ctx: Context, (opts, cmd): (CommandGlobalOpts, VaultCommand)) 
         VaultSubcommand::Show { name } => {
             let name = name.unwrap_or(opts.state.vaults.default()?.name()?);
             let state = opts.state.vaults.get(&name)?;
-            println!();
             println!("Vault:");
-            println!("  Name: {}", name);
-            println!(
-                "  Type: {}",
-                match state.config.is_aws() {
-                    true => "AWS KMS",
-                    false => "OCKAM",
+            for line in state.to_string().lines() {
+                println!("{:2}{}", "", line)
+            }
+        }
+        VaultSubcommand::List {} => {
+            let states = opts.state.vaults.list()?;
+            for (idx, vault) in states.iter().enumerate() {
+                println!("Vault[{}]:", idx);
+                for line in vault.to_string().lines() {
+                    println!("{:2}{}", "", line)
                 }
-            );
+            }
         }
     }
     Ok(())

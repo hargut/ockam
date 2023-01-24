@@ -6,6 +6,7 @@ use crate::node::show::print_query_status;
 use crate::node::util::{default_node_name, spawn_node};
 use crate::util::{node_rpc, RpcBuilder};
 use crate::{help, node::HELP_DETAIL, CommandGlobalOpts};
+use ockam_api::cli_state::ConfigItemsStore;
 
 /// Start a node
 #[derive(Clone, Debug, Args)]
